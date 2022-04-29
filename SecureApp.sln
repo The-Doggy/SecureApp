@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30517.126
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SecureApp", "SecureApp\SecureApp.csproj", "{516B33CD-6310-46D2-9A16-33AB08D750C8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecureAppServer", "SecureAppServer\SecureAppServer.csproj", "{DBE80D9B-F641-424F-AC9A-309C23C24D93}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{516B33CD-6310-46D2-9A16-33AB08D750C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{516B33CD-6310-46D2-9A16-33AB08D750C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{516B33CD-6310-46D2-9A16-33AB08D750C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{516B33CD-6310-46D2-9A16-33AB08D750C8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DBE80D9B-F641-424F-AC9A-309C23C24D93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DBE80D9B-F641-424F-AC9A-309C23C24D93}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DBE80D9B-F641-424F-AC9A-309C23C24D93}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DBE80D9B-F641-424F-AC9A-309C23C24D93}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2D7FE898-155D-4343-B57C-35F876DA9A74}
+	EndGlobalSection
+EndGlobal

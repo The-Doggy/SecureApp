@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SecureAppServer": {
+      "commandName": "Project",
+      "commandLineArgs": "SecureAppServer.p7b",
+      "workingDirectory": "C:\\Users\\Doggy\\source\\repos\\SecureApp\\SecureAppServer",
+      "remoteDebugEnabled": false
+    }
+  }
+}
