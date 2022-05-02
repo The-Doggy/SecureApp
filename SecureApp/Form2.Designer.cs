@@ -50,7 +50,6 @@
             this.UsernameTextBox.PlaceholderText = "Username";
             this.UsernameTextBox.Size = new System.Drawing.Size(215, 31);
             this.UsernameTextBox.TabIndex = 0;
-            this.UsernameTextBox.Validating += new System.ComponentModel.CancelEventHandler(this.UsernameTextBox_Validating);
             // 
             // PasswordTextBox
             // 
@@ -61,7 +60,6 @@
             this.PasswordTextBox.PlaceholderText = "Password";
             this.PasswordTextBox.Size = new System.Drawing.Size(215, 31);
             this.PasswordTextBox.TabIndex = 1;
-            this.PasswordTextBox.Validating += new System.ComponentModel.CancelEventHandler(this.PasswordTextBox_Validating);
             // 
             // LoginButton
             // 

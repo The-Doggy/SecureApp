@@ -2,8 +2,8 @@
   "profiles": {
     "SecureAppServer": {
       "commandName": "Project",
-      "commandLineArgs": "SecureAppServer.p7b",
-      "workingDirectory": "C:\\Users\\Doggy\\source\\repos\\SecureApp\\SecureAppServer",
+      "commandLineArgs": "certificate.pfx",
+      "workingDirectory": "E:\\Documents\\Git Repos\\SecureApp\\SecureAppServer",
       "remoteDebugEnabled": false
     }
   }

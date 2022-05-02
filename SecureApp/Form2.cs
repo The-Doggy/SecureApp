@@ -14,6 +14,8 @@ using System.Net.Security;
 using System.IO;
 using System.Text;
 using System.Security.Cryptography.X509Certificates;
+using System.Diagnostics;
+using System.Security;
 
 namespace SecureApp
 {
@@ -21,7 +23,6 @@ namespace SecureApp
     {
         private static ResourceManager rm = new ResourceManager("SecureApp.Properties.Resources", typeof(LoginForm).Assembly);
         private static ModifyRegistry registry = new ModifyRegistry();
-        private static readonly MySqlConnection conn = new MySqlConnection("server=162.248.93.113;user=secure_user;database=SecureAppDB;");
         private static readonly SrpClient client = new SrpClient();
         private int loginAttempts;
         private DateTime lockoutTime;
@@ -38,9 +39,12 @@ namespace SecureApp
             }
             catch (ArgumentNullException)
             {
+                // Don't need to do anything with exception so just log it
+                Debug.WriteLine("lockoutTime is null.");
             }
         }
 
+/*      NOTE: nope
         private void UsernameTextBox_Validating(object sender, CancelEventArgs e)
         {
             // Show an error if the username is invalid
@@ -52,6 +56,7 @@ namespace SecureApp
             // Show an error if the password is invalid
             PasswordErrorProvider.SetError(PasswordTextBox, ValidatePassword() ? "" : "Password must be between 8-64 characters");
         }
+*/
 
         private void LoginButton_Click(object sender, EventArgs e)
         {
@@ -92,7 +97,7 @@ namespace SecureApp
             }
             else
             {
-                MessageBox.Show(this, "Please fix errors and try again.", "Invalid Input", MessageBoxButtons.OK);
+                MessageBox.Show(this, "Invalid username/password.", "Invalid Details", MessageBoxButtons.OK);
             }
         }
 
@@ -100,24 +105,86 @@ namespace SecureApp
         {
             if (!CheckLoginAttempts()) return;
 
-            var clientEphemeral = client.GenerateEphemeral();
-
-            TcpClient tcp = new TcpClient("localhost", 443);
+            TcpClient tcp = new TcpClient("localhost", 8080);
             SslStream stream = new SslStream(tcp.GetStream(), false, new RemoteCertificateValidationCallback(CheckCert));
             stream.AuthenticateAsClient("localhost");
 
-            // Send username and client ephemeral to server using '-' as a buffer char between the two and <EOF> to signal end of message
-            byte[] message = Encoding.UTF8.GetBytes($"{user}-{clientEphemeral}<EOF>");
+            // Send info to server using LOGIN: to signal what type of message we're sending, <EOL> to signal the next part of the message and <EOF> to signal end of message
+            // Using this type of designation means that the data sent always needs to be in the correct order otherwise the server will read incorrect data
+            SrpEphemeral clientEphemeral = client.GenerateEphemeral();
+            byte[] message = Encoding.UTF8.GetBytes($"LOGIN:{user}<EOL>{clientEphemeral.Public}<EOF>");
             stream.Write(message);
             stream.Flush();
 
             string serverMessage = ReadMessage(stream);
-            Console.WriteLine("Recieved: {0}", serverMessage);
+            Debug.WriteLine(serverMessage);
+
+            // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+            serverMessage = serverMessage[(serverMessage.IndexOf(':') + 1)..];
+            serverMessage = serverMessage.Remove(serverMessage.IndexOf("<EOF>"));
+            Debug.WriteLine(serverMessage);
+
+            // If all we get back is "0" the login attempt failed
+            if(serverMessage.Equals("0"))
+            {
+                MessageBox.Show(this, "Invalid username/password.", "Invalid Details", MessageBoxButtons.OK);
+                loginAttempts++;
+                tcp.Close();
+                return;
+            }
+
+            // Split the data from each <EOL> section
+            string[] serverData = serverMessage.Split("<EOL>", StringSplitOptions.RemoveEmptyEntries);
+            foreach (string data in serverData)
+            {
+                Debug.WriteLine(data);
+            }
+
+            string salt = serverData[0];
+            string serverPublicEphemeral = serverData[1];
+            string privateKey = client.DerivePrivateKey(salt, user, pass);
+            SrpSession clientSession = client.DeriveSession(clientEphemeral.Secret, serverPublicEphemeral, salt, user, privateKey);
+            Debug.WriteLine(clientSession.Proof);
+
+            message = Encoding.UTF8.GetBytes($"LOGIN:{clientSession.Proof}<EOF>");
+            stream.Write(message);
+            stream.Flush();
+
+            serverMessage = ReadMessage(stream);
+            Debug.WriteLine(serverMessage);
+
+            // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+            serverMessage = serverMessage[(serverMessage.IndexOf(':') + 1)..];
+            serverMessage = serverMessage.Remove(serverMessage.IndexOf("<EOF>"));
+            Debug.WriteLine(serverMessage);
+
+            // If all we get back is "0" the login attempt failed
+            if (serverMessage.Equals("0"))
+            {
+                MessageBox.Show(this, "Invalid username/password.", "Invalid Details", MessageBoxButtons.OK);
+                loginAttempts++;
+                tcp.Close();
+                return;
+            }
+
+            try
+            {
+                client.VerifySession(clientEphemeral.Public, clientSession, serverMessage);
+            }
+            catch(SecurityException)
+            {
+                // Server session proof is invalid, deny login
+                MessageBox.Show(this, "Invalid username/password.", "Invalid Details", MessageBoxButtons.OK);
+                loginAttempts++;
+                tcp.Close();
+                return;
+            }
+
+            // If we get here then everything has gone right and the client can login!
+            LoadMainForm(user);
 
             // Close the connection
             tcp.Close();
-
-            loginAttempts++;
         }
 
         private bool CheckLoginAttempts()
@@ -155,13 +222,8 @@ namespace SecureApp
               X509Chain chain,
               SslPolicyErrors sslPolicyErrors)
         {
-            if (sslPolicyErrors == SslPolicyErrors.None)
-                return true;
-
-            Console.WriteLine("Certificate error: {0}", sslPolicyErrors);
-
-            // Do not allow this client to communicate with unauthenticated servers.
-            return false;
+            // Don't care about cert authentication
+            return true;
         }
 
         private string ReadMessage(SslStream sslStream)
@@ -194,7 +256,26 @@ namespace SecureApp
 
         private void LoadSignUpForm()
         {
+            SignUpForm form = new SignUpForm
+            {
+                Location = this.Location,
+                StartPosition = FormStartPosition.Manual
+            };
+            form.FormClosing += delegate { this.Show(); };
+            form.Show();
+            this.Hide();
+        }
 
+        private void LoadMainForm(string username)
+        {
+            MainForm form = new MainForm(username)
+            {
+                Location = this.Location,
+                StartPosition = FormStartPosition.Manual
+            };
+            form.FormClosing += delegate { this.Show(); };
+            form.Show();
+            this.Hide();
         }
     }
 
