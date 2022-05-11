@@ -16,6 +16,7 @@ using System.Text;
 using System.Security.Cryptography.X509Certificates;
 using System.Diagnostics;
 using System.Security;
+using TwoFactorAuthNet;
 
 namespace SecureApp
 {
@@ -93,7 +94,7 @@ namespace SecureApp
         {
             if(ValidateUsername() && ValidatePassword())
             {
-                TryLogin(UsernameTextBox.Text, PasswordTextBox.Text);
+                TryLogin(UsernameTextBox.Text.ToLower(), PasswordTextBox.Text);
             }
             else
             {
@@ -105,9 +106,10 @@ namespace SecureApp
         {
             if (!CheckLoginAttempts()) return;
 
-            TcpClient tcp = new TcpClient("localhost", 8080);
+            string server = File.ReadAllText("server.txt");
+            TcpClient tcp = new TcpClient(server, 8080);
             SslStream stream = new SslStream(tcp.GetStream(), false, new RemoteCertificateValidationCallback(CheckCert));
-            stream.AuthenticateAsClient("localhost");
+            stream.AuthenticateAsClient(server);
 
             // Send info to server using LOGIN: to signal what type of message we're sending, <EOL> to signal the next part of the message and <EOF> to signal end of message
             // Using this type of designation means that the data sent always needs to be in the correct order otherwise the server will read incorrect data
@@ -180,7 +182,46 @@ namespace SecureApp
                 return;
             }
 
-            // If we get here then everything has gone right and the client can login!
+            // If we get here then everything else has gone right and we can now check 2FA
+            message = Encoding.UTF8.GetBytes($"LOGIN:{user}<EOF>");
+            stream.Write(message);
+            stream.Flush();
+
+            serverMessage = ReadMessage(stream);
+            Debug.WriteLine(serverMessage);
+
+            // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+            serverMessage = serverMessage[(serverMessage.IndexOf(':') + 1)..];
+            serverMessage = serverMessage.Remove(serverMessage.IndexOf("<EOF>"));
+            Debug.WriteLine(serverMessage);
+
+            // If all we get back is "0" the login attempt failed
+            if (serverMessage.Equals("0"))
+            {
+                MessageBox.Show(this, "Login failed.", "Invalid Details", MessageBoxButtons.OK);
+                loginAttempts++;
+                tcp.Close();
+                return;
+            }
+
+            TwoFactorAuth tfa = new TwoFactorAuth("SecureApp");
+            using (TFALogin dialog = new TFALogin())
+            {
+                // Do not allow client to proceed until they authenticate with 2FA
+                bool tfaAuthenticated = false;
+                do
+                {
+                    dialog.ShowDialog();
+                    string token = dialog.Token;
+                    if(tfa.VerifyCode(serverMessage, token))
+                    {
+                        tfaAuthenticated = true;
+                    }
+                }
+                while (!tfaAuthenticated);
+            }
+
+            // If we get to here the client has authenticated successfully with username/password and 2FA so we can let them in
             LoadMainForm(user);
 
             // Close the connection

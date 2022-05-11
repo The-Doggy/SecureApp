@@ -14,7 +14,7 @@ namespace SecureAppServer
 {
     public sealed class Program
     {
-        private static readonly MySqlConnection conn = new MySqlConnection("server=162.248.93.113;user=test_user;database=SecureAppDB;");
+        private static readonly MySqlConnection conn = new MySqlConnection("server=localhost;user=test_user;database=SecureAppDB;");
         private static readonly SrpServer server = new SrpServer();
 
         static void Main(string[] args)
@@ -78,139 +78,226 @@ namespace SecureAppServer
         {
             // A client has connected. Create the
             // SslStream using the client's network stream.
-            SslStream sslStream = new SslStream(
-                client.GetStream(), false);
-            // Authenticate the server but don't require the client to authenticate.
-            try
+            using (SslStream sslStream = new SslStream(
+                client.GetStream(), false))
             {
-                sslStream.AuthenticateAsServer(serverCertificate, false, false);
-                // Set timeouts for the read and write to 5 seconds.
-                sslStream.ReadTimeout = 5000;
-                sslStream.WriteTimeout = 5000;
-                // Read a message from the client.
-                Console.WriteLine("Waiting for client message...");
-                string messageData = ReadMessage(sslStream);
-                //Console.WriteLine("Received: {0}", messageData);
-
-                // Check what type of message has been received:
-                if(messageData.StartsWith("REGISTER:"))
+                // Authenticate the server but don't require the client to authenticate.
+                try
                 {
-                    // Get the rest of the string without "REGISTER:" at the start and "<EOF>" at the end
-                    messageData = messageData[(messageData.IndexOf(':') + 1)..];
-                    messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
-
-                    // Split the data from each <EOL> section
-                    string[] registerInfo = messageData.Split("<EOL>", StringSplitOptions.RemoveEmptyEntries);
-                    foreach(string data in registerInfo)
-                    {
-                        Console.WriteLine(data);
-                    }
-
-                    // Write user info to database
-                    conn.Open();
-                    using MySqlCommand cmd = conn.CreateCommand();
-                    cmd.CommandText = "INSERT IGNORE INTO users (username, salt, verifier) VALUES (@u, @s, @v)";
-                    cmd.Parameters.AddWithValue("u", registerInfo[0]);
-                    cmd.Parameters.AddWithValue("s", registerInfo[1]);
-                    cmd.Parameters.AddWithValue("v", registerInfo[2]);
-                    int result = cmd.ExecuteNonQuery();
-                    conn.Close();
-
-                    // Send result to client
-                    byte[] message = Encoding.UTF8.GetBytes($"REGISTER:{result}<EOF>");
-                    sslStream.Write(message);
-                }
-                else if(messageData.StartsWith("LOGIN:"))
-                {
-                    // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
-                    messageData = messageData[(messageData.IndexOf(':') + 1)..];
-                    messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
-
-                    // Split the data from each <EOL> section
-                    string[] userInfo = messageData.Split("<EOL>", StringSplitOptions.RemoveEmptyEntries);
-                    foreach (string data in userInfo)
-                    {
-                        Console.WriteLine(data);
-                    }
-                    string user = userInfo[0];
-                    string clientPublicEphemeral = userInfo[1];
-
-                    // Get user info from database
-                    conn.Open();
-                    using MySqlCommand cmd = conn.CreateCommand();
-                    cmd.CommandText = "SELECT salt, verifier FROM users WHERE username = @u";
-                    cmd.Parameters.AddWithValue("u", userInfo[0]);
-                    using MySqlDataReader reader = cmd.ExecuteReader();
-                    string salt = null;
-                    string verifier = null;
-                    if(reader.Read())
-                    {
-                        salt = reader.GetString(0);
-                        verifier = reader.GetString(1);
-                    }
-                    conn.Close();
-
-                    byte[] message;
-                    SrpEphemeral serverEphemeral = null;
-                    if (salt == null || verifier == null)
-                    {
-                        message = Encoding.UTF8.GetBytes("LOGIN:0<EOF>");
-                        sslStream.Write(message);
-                        sslStream.Close();
-                        client.Close();
-                        return;
-                    }
-                    else
-                    {
-                        serverEphemeral = server.GenerateEphemeral(verifier);
-                        message = Encoding.UTF8.GetBytes($"LOGIN:{salt}<EOL>{serverEphemeral.Public}<EOF>");
-                        sslStream.Write(message);
-                        sslStream.Flush();
-                    }
-
+                    sslStream.AuthenticateAsServer(serverCertificate, false, false);
+                    // Set timeouts for the read and write to 5 seconds.
+                    sslStream.ReadTimeout = 5000;
+                    sslStream.WriteTimeout = 5000;
+                    // Read a message from the client.
                     Console.WriteLine("Waiting for client message...");
-                    messageData = ReadMessage(sslStream);
-                    Console.WriteLine($"Received: {messageData}");
+                    string messageData = ReadMessage(sslStream);
+                    //Console.WriteLine("Received: {0}", messageData);
 
-                    // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
-                    messageData = messageData[(messageData.IndexOf(':') + 1)..];
-                    messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
-
-                    try
+                    // Check what type of message has been received:
+                    if (messageData.StartsWith("REGISTER:"))
                     {
-                        SrpSession serverSession = server.DeriveSession(serverEphemeral.Secret, clientPublicEphemeral, salt, user, verifier, messageData);
-                        message = Encoding.UTF8.GetBytes($"LOGIN:{serverSession.Proof}<EOF>");
-                        sslStream.Write(message);
-                        sslStream.Flush();
+                        // Get the rest of the string without "REGISTER:" at the start and "<EOF>" at the end
+                        messageData = messageData[(messageData.IndexOf(':') + 1)..];
+                        messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
+
+                        // Split the data from each <EOL> section
+                        string[] registerInfo = messageData.Split("<EOL>", StringSplitOptions.RemoveEmptyEntries);
+                        foreach (string data in registerInfo)
+                        {
+                            Console.WriteLine(data);
+                        }
+
+                        // Write user info to database
+                        conn.Open();
+                        using MySqlCommand cmd = conn.CreateCommand();
+                        {
+                            cmd.CommandText = "INSERT IGNORE INTO users (username, salt, verifier) VALUES (@u, @s, @v)";
+                            cmd.Parameters.AddWithValue("u", registerInfo[0]);
+                            cmd.Parameters.AddWithValue("s", registerInfo[1]);
+                            cmd.Parameters.AddWithValue("v", registerInfo[2]);
+                            int result = cmd.ExecuteNonQuery();
+
+                            // Send result to client
+                            byte[] message = Encoding.UTF8.GetBytes($"REGISTER:{result}<EOF>");
+                            sslStream.Write(message);
+                            sslStream.Flush();
+
+                            if (result == 0)
+                            {
+                                cmd.CommandText = "DELETE FROM users WHERE username = @n";
+                                cmd.Parameters.AddWithValue("n", registerInfo[0]);
+                                cmd.ExecuteNonQuery();
+
+                                conn.Close();
+                                return;
+                            }
+
+                            // Set timeouts to several minutes
+                            sslStream.ReadTimeout = 600000;
+                            sslStream.WriteTimeout = 600000;
+
+                            // Get 2FA secret from client
+                            Console.WriteLine("Waiting for client message...");
+                            messageData = ReadMessage(sslStream);
+
+                            // Get the rest of the string without "REGISTER:" at the start and "<EOF>" at the end
+                            messageData = messageData[(messageData.IndexOf(':') + 1)..];
+                            messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
+                            Console.WriteLine(messageData);
+
+                            // Write secret to database
+                            cmd.CommandText = "UPDATE users SET secret = @ss WHERE username = @un";
+                            cmd.Parameters.AddWithValue("ss", messageData);
+                            cmd.Parameters.AddWithValue("un", registerInfo[0]);
+                            result = cmd.ExecuteNonQuery();
+
+                            // Send result to client
+                            message = Encoding.UTF8.GetBytes($"REGISTER:{result}<EOF>");
+                            sslStream.Write(message);
+                            sslStream.Flush();
+                        }
+                        conn.Close();
                     }
-                    catch(SecurityException)
+                    else if (messageData.StartsWith("LOGIN:"))
                     {
-                        // Client session proof is invalid, send login failure to client
-                        message = Encoding.UTF8.GetBytes("LOGIN:0<EOF>");
-                        sslStream.Write(message);
-                        sslStream.Flush();
+                        // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+                        messageData = messageData[(messageData.IndexOf(':') + 1)..];
+                        messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
+
+                        // Split the data from each <EOL> section
+                        string[] userInfo = messageData.Split("<EOL>", StringSplitOptions.RemoveEmptyEntries);
+                        foreach (string data in userInfo)
+                        {
+                            Console.WriteLine(data);
+                        }
+
+                        string user = userInfo[0];
+                        string clientPublicEphemeral = userInfo[1];
+                        string salt = null;
+                        string verifier = null;
+
+                        // Get user info from database
+                        conn.Open();
+                        using MySqlCommand cmd = conn.CreateCommand();
+                        {
+                            cmd.CommandText = "SELECT salt, verifier FROM users WHERE username = @u";
+                            cmd.Parameters.AddWithValue("u", user);
+
+                            using MySqlDataReader reader = cmd.ExecuteReader();
+                            {
+                                if (reader.Read())
+                                {
+                                    salt = reader.GetString(0);
+                                    verifier = reader.GetString(1);
+                                }
+                            }
+
+                            byte[] message;
+                            SrpEphemeral serverEphemeral = null;
+                            if (salt == null || verifier == null)
+                            {
+                                message = Encoding.UTF8.GetBytes("LOGIN:0<EOF>");
+                                sslStream.Write(message);
+                            }
+                            else
+                            {
+                                serverEphemeral = server.GenerateEphemeral(verifier);
+                                message = Encoding.UTF8.GetBytes($"LOGIN:{salt}<EOL>{serverEphemeral.Public}<EOF>");
+                                sslStream.Write(message);
+                                sslStream.Flush();
+                            }
+
+                            Console.WriteLine("Waiting for client message...");
+                            messageData = ReadMessage(sslStream);
+                            Console.WriteLine($"Received: {messageData}");
+
+                            // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+                            messageData = messageData[(messageData.IndexOf(':') + 1)..];
+                            messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
+
+                            try
+                            {
+                                SrpSession serverSession = server.DeriveSession(serverEphemeral.Secret, clientPublicEphemeral, salt, user, verifier, messageData);
+                                message = Encoding.UTF8.GetBytes($"LOGIN:{serverSession.Proof}<EOF>");
+                                sslStream.Write(message);
+                                sslStream.Flush();
+                            }
+                            catch (SecurityException)
+                            {
+                                // Client session proof is invalid, send login failure to client
+                                message = Encoding.UTF8.GetBytes("LOGIN:0<EOF>");
+                                sslStream.Write(message);
+                                sslStream.Flush();
+                                conn.Close();
+                                return;
+                            }
+
+                            Console.WriteLine("Waiting for client message...");
+                            messageData = ReadMessage(sslStream);
+                            Console.WriteLine($"Received: {messageData}");
+
+                            // Get the rest of the string without "LOGIN:" at the start and "<EOF>" at the end
+                            messageData = messageData[(messageData.IndexOf(':') + 1)..];
+                            messageData = messageData.Remove(messageData.IndexOf("<EOF>"));
+
+                            // Get user info from database
+                            reader.Close();
+                            cmd.CommandText = "SELECT secret FROM users WHERE username = @n";
+                            cmd.Parameters.AddWithValue("n", user);
+
+                            string secret = null;
+                            using MySqlDataReader reader2 = cmd.ExecuteReader();
+                            {
+                                if (reader2.Read())
+                                {
+                                    secret = reader2.GetString(0);
+                                }
+                            }
+
+                            if (string.IsNullOrEmpty(secret))
+                            {
+                                message = Encoding.UTF8.GetBytes("LOGIN:0<EOF>");
+                            }
+                            else
+                            {
+                                message = Encoding.UTF8.GetBytes($"LOGIN:{secret}<EOF>");
+                            }
+                            sslStream.Write(message);
+                            sslStream.Flush();
+                        }
+                        conn.Close();
                     }
                 }
-            }
-            catch (AuthenticationException e)
-            {
-                Console.WriteLine("Exception: {0}", e.Message);
-                if (e.InnerException != null)
+                catch (AuthenticationException e)
                 {
-                    Console.WriteLine("Inner exception: {0}", e.InnerException.Message);
+                    Console.WriteLine("Exception: {0}", e.Message);
+                    if (e.InnerException != null)
+                    {
+                        Console.WriteLine("Inner exception: {0}", e.InnerException.Message);
+                    }
+                    Console.WriteLine("Authentication failed - closing the connection.");
+                    return;
                 }
-                Console.WriteLine("Authentication failed - closing the connection.");
-                sslStream.Close();
-                client.Close();
-                return;
-            }
-            finally
-            {
-                // The client stream will be closed with the sslStream
-                // because we specified this behavior when creating
-                // the sslStream.
-                sslStream.Close();
-                client.Close();
+                catch (IOException e)
+                {
+                    Console.WriteLine("Exception: {0}", e.Message);
+                    if (e.InnerException != null)
+                    {
+                        Console.WriteLine("Inner exception: {0}", e.InnerException.Message);
+                    }
+                    Console.WriteLine("Authentication failed - closing the connection.");
+                    return;
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Exception: {0}", e.Message);
+                    if (e.InnerException != null)
+                    {
+                        Console.WriteLine("Inner exception: {0}", e.InnerException.Message);
+                    }
+                    Console.WriteLine("Authentication failed - closing the connection.");
+                    return;
+                }
             }
         }
         static string ReadMessage(SslStream sslStream)

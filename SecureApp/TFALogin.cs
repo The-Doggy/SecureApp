@@ -8,18 +8,19 @@ using System.Windows.Forms;
 
 namespace SecureApp
 {
-    public partial class MainForm : Form
+    public partial class TFALogin : Form
     {
-        private string username;
-        public MainForm()
+        public TFALogin()
         {
             InitializeComponent();
         }
-        public MainForm(string username)
+
+        public string Token { get; internal set; }
+
+        private void submitButton_Click(object sender, EventArgs e)
         {
-            InitializeComponent();
-            this.username = username;
-            WelcomeLabel.Text = $"Hello, {username}";
+            this.Token = tokenTextBox.Text;
+            this.Close();
         }
     }
 }

@@ -11,7 +11,9 @@ using System.Resources;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
+using TwoFactorAuthNet;
 using System.Windows.Forms;
+using System.IO;
 
 namespace SecureApp
 {
@@ -73,7 +75,7 @@ namespace SecureApp
         {
             if (ValidateUsername() && ValidatePassword())
             {
-                TryRegister(UsernameTextBox.Text, PasswordTextBox.Text);
+                TryRegister(UsernameTextBox.Text.ToLower(), PasswordTextBox.Text);
             }
             else
             {
@@ -86,10 +88,11 @@ namespace SecureApp
             var salt = client.GenerateSalt();
             var privateKey = client.DerivePrivateKey(salt, user, pass);
             var verifier = client.DeriveVerifier(privateKey);
+            string server = File.ReadAllText("server.txt");
 
-            TcpClient tcp = new TcpClient("localhost", 8080);
+            TcpClient tcp = new TcpClient(server, 8080);
             SslStream stream = new SslStream(tcp.GetStream(), false, new RemoteCertificateValidationCallback(CheckCert));
-            stream.AuthenticateAsClient("localhost");
+            stream.AuthenticateAsClient(server);
 
             // Send info to server using REGISTER: to signal what type of message we're sending, <EOL> to signal the next part of the message and <EOF> to signal end of message
             // Using this type of designation means that the data sent always needs to be in the correct order otherwise the server will read incorrect data
@@ -98,10 +101,67 @@ namespace SecureApp
             stream.Flush();
 
             string serverMessage = ReadMessage(stream);
+
+            // Get the rest of the string without "REGISTER:" at the start and "<EOF>" at the end
+            serverMessage = serverMessage[(serverMessage.IndexOf(':') + 1)..];
+            serverMessage = serverMessage.Remove(serverMessage.IndexOf("<EOF>"));
             Debug.WriteLine(serverMessage);
+
+            // If all we get back is "0" the registration attempt failed
+            if (serverMessage.Equals("0"))
+            {
+                MessageBox.Show(this, $"Failed to register user {user}", "Registration Failed", MessageBoxButtons.OK);
+                tcp.Close();
+                return;
+            }
+
+            // Registration has completed successfully, we can now setup 2FA
+            TwoFactorAuth tfa = new TwoFactorAuth("SecureApp");
+            string secret = tfa.CreateSecret(160);
+            using (TFADialog dialog = new TFADialog(secret))
+            {
+                // Do not allow client to proceed until they authenticate with 2FA
+                bool tfaAuthenticated = false;
+                do
+                {
+                    dialog.ShowDialog();
+                    string token = dialog.Token;
+                    if (tfa.VerifyCode(secret, token))
+                    {
+                        // Token is valid, send secret to server to store
+                        message = Encoding.UTF8.GetBytes($"REGISTER:{secret}<EOF>");
+                        stream.Write(message);
+                        stream.Flush();
+
+                        serverMessage = ReadMessage(stream);
+
+                        // Get the rest of the string without "REGISTER:" at the start and "<EOF>" at the end
+                        serverMessage = serverMessage[(serverMessage.IndexOf(':') + 1)..];
+                        serverMessage = serverMessage.Remove(serverMessage.IndexOf("<EOF>"));
+                        Debug.WriteLine(serverMessage);
+
+                        // If all we get back is "1" the registration attempt succeeded
+                        if (serverMessage.Equals("1"))
+                        {
+                            tfaAuthenticated = true;
+                        }
+                    }
+                    if (!tfaAuthenticated)
+                    {
+                        MessageBox.Show(this, $"Failed to verify 2FA for user {user}", "Registration Failed", MessageBoxButtons.OK);
+                    }
+                }
+                while (!tfaAuthenticated);
+            }
+
+            // User has been registered successfully
+            MessageBox.Show(this, $"Successfully registered user {user}", "Registration Successful", MessageBoxButtons.OK);
 
             // Close the connection
             tcp.Close();
+
+            // Go back to the login form
+            LoadLoginForm();
         }
 
         public static bool CheckCert(
@@ -140,6 +200,14 @@ namespace SecureApp
             } while (bytes != 0);
 
             return messageData.ToString();
+        }
+
+        private void Setup2FAComponents()
+        {
+            UsernameTextBox.Hide();
+            PasswordTextBox.Hide();
+            LoginButton.Hide();
+            LoginLink.Hide();
         }
 
         private void LoadLoginForm()
